@@ -1,0 +1,47 @@
+[
+  {
+    "title": "Auth token expiration causing login failures",
+    "description": "Multiple users report unable to join due to expired JWT tokens.",
+    "severity": "HIGH",
+    "rootCause": "Token lifetime too short and refresh job lag",
+    "previousResolutions": [
+      "Increase token TTL from 15m to 60m",
+      "Scale refresh worker pool by 2x",
+      "Purge stale sessions from cache"
+    ],
+    "recommendedActions": [
+      "Tune OAuth provider TTL and refresh skew",
+      "Add alert on refresh queue latency > 2s"
+    ]
+  },
+  {
+    "title": "WebSocket disconnect storm in us-east-1",
+    "description": "Spike in signaling disconnects and reconnect attempts.",
+    "severity": "HIGH",
+    "rootCause": "Load balancer idle timeout too aggressive",
+    "previousResolutions": [
+      "Increase ALB idle timeout from 60s to 180s",
+      "Enable TCP keep-alive on clients"
+    ],
+    "recommendedActions": [
+      "Add synthetic client to detect early EOF",
+      "Rollout backoff jitter policy"
+    ]
+  },
+  {
+    "title": "TURN relay allocation failures",
+    "description": "TURN server returns allocation mismatch and 437 errors.",
+    "severity": "MEDIUM",
+    "rootCause": "NAT mapping timeout and port exhaustion",
+    "previousResolutions": [
+      "Increase relay port range",
+      "Enable hairpin NAT on gateway",
+      "Lower allocation retry backoff to 1s"
+    ],
+    "recommendedActions": [
+      "Add alert on 437 ratio > 5%",
+      "Autoscale TURN pods on CPU > 70%"
+    ]
+  }
+]
+

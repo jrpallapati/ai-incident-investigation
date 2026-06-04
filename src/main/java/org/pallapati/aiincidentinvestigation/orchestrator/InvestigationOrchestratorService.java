@@ -1,101 +1,60 @@
 package org.pallapati.aiincidentinvestigation.orchestrator;
 
+import org.bsc.langgraph4j.CompiledGraph;
+import org.bsc.langgraph4j.state.AgentState;
 import org.pallapati.aiincidentinvestigation.dto.InvestigationRequest;
 import org.pallapati.aiincidentinvestigation.dto.InvestigationResponse;
 import org.pallapati.aiincidentinvestigation.model.IncidentInvestigation;
 import org.pallapati.aiincidentinvestigation.repository.IncidentInvestigationRepository;
-import org.pallapati.aiincidentinvestigation.service.LogSearchService;
-import org.pallapati.aiincidentinvestigation.service.agent.*;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 
-/**
- * Coordinates the end-to-end multi-agent incident investigation flow.
- *
- * Flow:
- * 1) semantic search for relevant logs
- * 2) DetectionAgent -> symptoms/services/severity
- * 3) CorrelationAgent -> cross-service patterns
- * 4) RootCauseAgent -> probable root cause
- * 5) RemediationAgent -> recommended actions
- * 6) SummaryAgent -> final narrative
- * 7) EscalationAgent -> optional ticket creation
- */
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 @Service
 public class InvestigationOrchestratorService {
 
-    private final LogSearchService logSearchService;
-    private final DetectionAgent detectionAgent;
-    private final CorrelationAgent correlationAgent;
-    private final RootCauseAgent rootCauseAgent;
-    private final RemediationAgent remediationAgent;
-    private final SummaryAgent summaryAgent;
-    private final EscalationAgent escalationAgent;
-    private final IncidentInvestigationRepository investigationRepository;
+    private static final Logger log = LoggerFactory.getLogger(InvestigationOrchestratorService.class);
 
-    public InvestigationOrchestratorService(LogSearchService logSearchService,
-                                            DetectionAgent detectionAgent,
-                                            CorrelationAgent correlationAgent,
-                                            RootCauseAgent rootCauseAgent,
-                                            RemediationAgent remediationAgent,
-                                            SummaryAgent summaryAgent,
-                                            EscalationAgent escalationAgent,
-                                            IncidentInvestigationRepository investigationRepository) {
-        this.logSearchService = logSearchService;
-        this.detectionAgent = detectionAgent;
-        this.correlationAgent = correlationAgent;
-        this.rootCauseAgent = rootCauseAgent;
-        this.remediationAgent = remediationAgent;
-        this.summaryAgent = summaryAgent;
-        this.escalationAgent = escalationAgent;
+    private final IncidentInvestigationRepository investigationRepository;
+    private final CompiledGraph<AgentState> graph;
+
+    public InvestigationOrchestratorService(IncidentInvestigationRepository investigationRepository,
+                                            InvestigationGraphBuilder graphBuilder) {
         this.investigationRepository = investigationRepository;
+        this.graph = graphBuilder.build();
     }
 
     public InvestigationResponse investigate(InvestigationRequest request) {
-        // Persist initial investigation record
+        log.info("[Orchestrator] create investigation for queryLen={} override={} ", request.getQuery() != null ? request.getQuery().length() : 0, request.getCreateTicketIfNeeded());
         IncidentInvestigation inv = new IncidentInvestigation();
         inv.setQuery(request.getQuery());
         inv.setStatus("RUNNING");
         inv = investigationRepository.save(inv);
 
-        // 1) Semantic search
-        var searchReq = new org.pallapati.aiincidentinvestigation.dto.LogSearchRequest();
-        searchReq.setQuery(request.getQuery());
-        searchReq.setTopK(12);
-        var searchResp = logSearchService.search(searchReq);
-        List<String> snippets = new ArrayList<>();
-        searchResp.getMatchingLogChunks().forEach(c -> snippets.add(c.getRawText()));
+        Map<String,Object> input = new HashMap<>();
+        input.put("investigationId", inv.getId());
+        input.put("query", request.getQuery());
+        // Pass nullable createTicketIfNeeded to allow LLM decision when null
+        input.put("createTicketIfNeeded", request.getCreateTicketIfNeeded());
 
-        // 2) Detection
-        var det = detectionAgent.run(inv.getId(), request.getQuery(), snippets);
-        inv.setDetectedSymptoms(det.getSymptoms());
-        inv.setAffectedServices(det.getServices());
+        var stateOpt = graph.invoke(input);
+        log.info("[Orchestrator] graph invocation completed");
+        var state = stateOpt.orElseGet(() -> new org.bsc.langgraph4j.state.AgentState(Map.of()));
 
-        // 3) Correlation
-        var corr = correlationAgent.run(inv.getId(), request.getQuery(), snippets);
-
-        // 4) Root Cause
-        var rc = rootCauseAgent.run(inv.getId(), request.getQuery(), det.getSymptoms(), corr.getPatterns(), snippets);
-        inv.setRootCause(rc.getRootCause());
-        inv.setConfidenceScore(rc.getConfidence());
-
-        // 5) Remediation
-        var rem = remediationAgent.run(inv.getId(), rc.getRootCause(), snippets);
-        inv.setRecommendedActions(rem.getActions());
-
-        // 6) Summary
-        var sum = summaryAgent.run(inv.getId(), request.getQuery(), rc.getRootCause(), rem.getActions(), snippets);
-        inv.setSummary(sum.getSummary());
-
-        // 7) Escalation
-        var esc = escalationAgent.run(inv.getId(), det.getSeverity(), inv.getConfidenceScore() != null ? inv.getConfidenceScore() : 0.6, request.isCreateTicketIfNeeded(), rc.getRootCause(), rem.getActions(), sum.getSummary());
-
+        inv.setDetectedSymptoms(state.value("symptoms", java.util.List.of()));
+        inv.setAffectedServices(state.value("services", java.util.List.of()));
+        inv.setRootCause(state.value("rootCause", ""));
+        Object conf = state.value("rootCauseConfidence", 0.7);
+        if (conf instanceof Number n) inv.setConfidenceScore(n.doubleValue());
+        inv.setRecommendedActions(state.value("actions", java.util.List.of()));
+        inv.setSummary(state.value("summary", ""));
         inv.setStatus("COMPLETED");
         investigationRepository.save(inv);
 
-        // Build response
         InvestigationResponse resp = new InvestigationResponse();
         resp.setInvestigationId(inv.getId());
         resp.setQuery(inv.getQuery());
@@ -106,9 +65,9 @@ public class InvestigationOrchestratorService {
         resp.setConfidenceScore(inv.getConfidenceScore());
         resp.setRecommendedActions(inv.getRecommendedActions());
         resp.setSummary(inv.getSummary());
-        resp.setTicketCreated(esc.ticketCreated());
-        resp.setTicketId(esc.ticketId());
+        resp.setTicketCreated(Boolean.TRUE.equals(state.value("ticketCreated", false)));
+        resp.setTicketId(state.value("ticketId", ""));
+        log.info("[Orchestrator] completed investigationId={} ticketCreated={} ticketId={}", inv.getId(), Boolean.TRUE.equals(state.value("ticketCreated", false)), state.value("ticketId", ""));
         return resp;
     }
 }
-

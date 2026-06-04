@@ -7,6 +7,9 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * RootCauseAgent
  *
@@ -15,6 +18,8 @@ import java.util.List;
  */
 @Service
 public class RootCauseAgent {
+
+    private static final Logger log = LoggerFactory.getLogger(RootCauseAgent.class);
 
     private final ChatClient chatClient;
     private final AgentFindingRepository findingRepository;
@@ -27,8 +32,11 @@ public class RootCauseAgent {
     }
 
     public RootCauseResult run(String investigationId, String userQuery, List<String> symptoms, List<String> patterns, List<String> logSnippets) {
-        String input = buildInput(userQuery, symptoms, patterns, logSnippets);
-        String content = chatClient.prompt().system(SYSTEM_PROMPT).user(input).call().content();
+        log.info("[Agent:RootCause] start investigationId={} symptoms={} patterns={} snippets={}", investigationId, symptoms != null ? symptoms.size() : 0, patterns != null ? patterns.size() : 0, logSnippets != null ? logSnippets.size() : 0);
+        long t0 = System.currentTimeMillis();
+        String content = chatClient.prompt().system(SYSTEM_PROMPT).user(buildInput(userQuery, symptoms, patterns, logSnippets)).call().content();
+        long dt = System.currentTimeMillis() - t0;
+        log.info("[Agent:RootCause] LLM call finished in {} ms", dt);
         RootCauseResult r = RootCauseResult.fromJson(content);
         persistFinding(investigationId, r, logSnippets);
         return r;

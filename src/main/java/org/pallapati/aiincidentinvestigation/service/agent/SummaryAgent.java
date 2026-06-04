@@ -7,6 +7,9 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * SummaryAgent
  *
@@ -14,6 +17,8 @@ import java.util.List;
  */
 @Service
 public class SummaryAgent {
+
+    private static final Logger log = LoggerFactory.getLogger(SummaryAgent.class);
 
     private final ChatClient chatClient;
     private final AgentFindingRepository findingRepository;
@@ -26,8 +31,11 @@ public class SummaryAgent {
     }
 
     public SummaryResult run(String investigationId, String userQuery, String rootCause, List<String> actions, List<String> logSnippets) {
-        String input = buildInput(userQuery, rootCause, actions, logSnippets);
-        String content = chatClient.prompt().system(SYSTEM_PROMPT).user(input).call().content();
+        log.info("[Agent:Summary] start investigationId={} queryLen={} actions={} snippets={}", investigationId, userQuery != null ? userQuery.length() : 0, actions != null ? actions.size() : 0, logSnippets != null ? logSnippets.size() : 0);
+        long t0 = System.currentTimeMillis();
+        String content = chatClient.prompt().system(SYSTEM_PROMPT).user(buildInput(userQuery, rootCause, actions, logSnippets)).call().content();
+        long dt = System.currentTimeMillis() - t0;
+        log.info("[Agent:Summary] LLM call finished in {} ms", dt);
         SummaryResult r = SummaryResult.fromJson(content);
         persistFinding(investigationId, r, logSnippets);
         return r;

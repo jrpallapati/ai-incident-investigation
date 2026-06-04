@@ -8,6 +8,9 @@ import org.springframework.stereotype.Service;
 import java.util.Arrays;
 import java.util.List;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * DetectionAgent
  *
@@ -20,6 +23,8 @@ import java.util.List;
 @Service
 public class DetectionAgent {
 
+    private static final Logger log = LoggerFactory.getLogger(DetectionAgent.class);
+
     private final ChatClient chatClient;
     private final AgentFindingRepository findingRepository;
 
@@ -31,13 +36,14 @@ public class DetectionAgent {
     }
 
     public DetectionResult run(String investigationId, String userQuery, List<String> logSnippets) {
-        String input = buildInput(userQuery, logSnippets);
-        String content = chatClient.prompt()
+        log.info("[Agent:Detection] start investigationId={} queryLen={} snippets={} ", investigationId, userQuery != null ? userQuery.length() : 0, logSnippets != null ? logSnippets.size() : 0);
+        long t0 = System.currentTimeMillis();
+        var call = chatClient.prompt()
                 .system(SYSTEM_PROMPT)
-                .user(input)
-                .call()
-                .content();
-
+                .user(buildInput(userQuery, logSnippets));
+        String content = call.call().content();
+        long dt = System.currentTimeMillis() - t0;
+        log.info("[Agent:Detection] LLM call finished in {} ms", dt);
         DetectionResult result = DetectionResult.fromJson(content);
         persistFinding(investigationId, result, logSnippets);
         return result;

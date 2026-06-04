@@ -8,6 +8,9 @@ import org.springframework.stereotype.Service;
 import java.util.Arrays;
 import java.util.List;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * CorrelationAgent
  *
@@ -16,6 +19,8 @@ import java.util.List;
  */
 @Service
 public class CorrelationAgent {
+
+    private static final Logger log = LoggerFactory.getLogger(CorrelationAgent.class);
 
     private final ChatClient chatClient;
     private final AgentFindingRepository findingRepository;
@@ -28,8 +33,11 @@ public class CorrelationAgent {
     }
 
     public CorrelationResult run(String investigationId, String userQuery, List<String> logSnippets) {
-        String input = buildInput(userQuery, logSnippets);
-        String content = chatClient.prompt().system(SYSTEM_PROMPT).user(input).call().content();
+        log.info("[Agent:Correlation] start investigationId={} queryLen={} snippets={}", investigationId, userQuery != null ? userQuery.length() : 0, logSnippets != null ? logSnippets.size() : 0);
+        long t0 = System.currentTimeMillis();
+        String content = chatClient.prompt().system(SYSTEM_PROMPT).user(buildInput(userQuery, logSnippets)).call().content();
+        long dt = System.currentTimeMillis() - t0;
+        log.info("[Agent:Correlation] LLM call finished in {} ms", dt);
         CorrelationResult r = CorrelationResult.fromJson(content);
         persistFinding(investigationId, r, logSnippets);
         return r;

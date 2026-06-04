@@ -28,6 +28,9 @@ public class EscalationTicket {
     private List<String> recommendedActions;
     private List<String> evidence; // references to log chunks or findings
 
+    // New: historical resolutions to enable solution recommendation
+    private List<String> previousResolutions;
+
     @CreatedDate
     private Instant createdAt;
     @LastModifiedDate
@@ -61,10 +64,12 @@ public class EscalationTicket {
     public List<String> getEvidence() { return evidence; }
     public void setEvidence(List<String> evidence) { this.evidence = evidence; }
 
+    public List<String> getPreviousResolutions() { return previousResolutions; }
+    public void setPreviousResolutions(List<String> previousResolutions) { this.previousResolutions = previousResolutions; }
+
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
 
     public Instant getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
 }
-

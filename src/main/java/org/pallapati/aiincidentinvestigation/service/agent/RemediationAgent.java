@@ -7,6 +7,9 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * RemediationAgent
  *
@@ -14,6 +17,8 @@ import java.util.List;
  */
 @Service
 public class RemediationAgent {
+
+    private static final Logger log = LoggerFactory.getLogger(RemediationAgent.class);
 
     private final ChatClient chatClient;
     private final AgentFindingRepository findingRepository;
@@ -26,8 +31,11 @@ public class RemediationAgent {
     }
 
     public RemediationResult run(String investigationId, String rootCause, List<String> logSnippets) {
-        String input = buildInput(rootCause, logSnippets);
-        String content = chatClient.prompt().system(SYSTEM_PROMPT).user(input).call().content();
+        log.info("[Agent:Remediation] start investigationId={} rootCauseLen={} snippets={}", investigationId, rootCause != null ? rootCause.length() : 0, logSnippets != null ? logSnippets.size() : 0);
+        long t0 = System.currentTimeMillis();
+        String content = chatClient.prompt().system(SYSTEM_PROMPT).user(buildInput(rootCause, logSnippets)).call().content();
+        long dt = System.currentTimeMillis() - t0;
+        log.info("[Agent:Remediation] LLM call finished in {} ms", dt);
         RemediationResult r = RemediationResult.fromJson(content);
         persistFinding(investigationId, r, logSnippets);
         return r;

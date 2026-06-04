@@ -10,12 +10,17 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * Performs semantic log search using the VectorStore similarity capabilities.
  * Accepts natural language queries and returns the most relevant log chunks.
  */
 @Service
 public class LogSearchService {
+
+    private static final Logger log = LoggerFactory.getLogger(LogSearchService.class);
 
     private final VectorStore vectorStore;
 
@@ -25,11 +30,14 @@ public class LogSearchService {
 
     public LogSearchResponse search(LogSearchRequest request) {
         int topK = request.getTopK() != null ? Math.max(1, Math.min(50, request.getTopK())) : 8;
+        long t0 = System.currentTimeMillis();
+        log.info("[SemanticSearch] query='{}' topK={}", request.getQuery(), topK);
         SearchRequest.Builder builder = SearchRequest.builder()
                 .query(request.getQuery())
                 .topK(topK);
-        // Filtering logic removed to ensure compatibility across Spring AI versions.
         List<Document> docs = vectorStore.similaritySearch(builder.build());
+        long dt = System.currentTimeMillis() - t0;
+        log.info("[SemanticSearch] matched={} in {} ms", docs.size(), dt);
         LogSearchResponse resp = new LogSearchResponse();
         resp.setMatchingLogChunks(docs.stream().map(d -> {
             LogSearchResponse.MatchingLogChunk mlc = new LogSearchResponse.MatchingLogChunk();

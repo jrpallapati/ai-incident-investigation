@@ -29,6 +29,9 @@
     <properties>
         <java.version>21</java.version>
         <spring-ai.version>2.0.0-M6</spring-ai.version>
+        <langgraph4j.version>1.8.17</langgraph4j.version>
+        <!-- Ensure consistent native plugin version -->
+        <graalvm.native.maven.plugin.version>0.10.3</graalvm.native.maven.plugin.version>
     </properties>
     <dependencies>
         <dependency>
@@ -41,10 +44,6 @@
         </dependency>
         <dependency>
             <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-advisors-vector-store</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-starter-model-openai</artifactId>
         </dependency>
         <dependency>
@@ -52,11 +51,10 @@
             <artifactId>spring-ai-starter-vector-store-mongodb-atlas</artifactId>
         </dependency>
 
+        <!-- LangGraph4j core (managed by BOM) -->
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-devtools</artifactId>
-            <scope>runtime</scope>
-            <optional>true</optional>
+            <groupId>org.bsc.langgraph4j</groupId>
+            <artifactId>langgraph4j-core</artifactId>
         </dependency>
 
         <!-- Testing -->
@@ -71,6 +69,7 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
     <dependencyManagement>
         <dependencies>
             <dependency>
@@ -80,20 +79,74 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
+            <dependency>
+                <groupId>org.bsc.langgraph4j</groupId>
+                <artifactId>langgraph4j-bom</artifactId>
+                <version>${langgraph4j.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
     <build>
         <plugins>
-            <plugin>
-                <groupId>org.graalvm.buildtools</groupId>
-                <artifactId>native-maven-plugin</artifactId>
-            </plugin>
+            <!-- Ensure AOT processing is executed when needed (native builds) -->
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>process-aot</id>
+                        <goals>
+                            <goal>process-aot</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- Native image plugin explicitly versioned and integrated with Boot AOT -->
+            <plugin>
+                <groupId>org.graalvm.buildtools</groupId>
+                <artifactId>native-maven-plugin</artifactId>
+                <version>${graalvm.native.maven.plugin.version}</version>
+                <extensions>true</extensions>
+                <configuration>
+                    <!-- explicit main class so native-image knows the entry point -->
+                    <mainClass>org.pallapati.aiincidentinvestigation.AiIncidentInvestigationApplication</mainClass>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>build-native</id>
+                        <goals>
+                            <!-- compile-no-fork is recommended with Spring Boot to wire AOT automatically -->
+                            <goal>compile-no-fork</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>
 
+    <!-- Devtools available only in the 'dev' profile (kept out of native/prod builds) -->
+    <profiles>
+        <profile>
+            <id>dev</id>
+            <dependencies>
+                <dependency>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-devtools</artifactId>
+                    <scope>runtime</scope>
+                    <optional>true</optional>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>native</id>
+            <properties>
+                <!-- Make it explicit when building native -->
+                <skipTests>true</skipTests>
+            </properties>
+        </profile>
+    </profiles>
 </project>
